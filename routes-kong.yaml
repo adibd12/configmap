@@ -1,0 +1,76 @@
+apiVersion: v1
+data:
+  script.sh: |-
+    #!/bin/bash
+
+      curl -i -s -X POST http://kong-kong-admin:8001/services   --data name=ui  --data url='http://ui-ingress/' 
+      curl -i -X POST http://kong-kong-admin:8001/services/ui/routes   --data 'paths[]=/'   --data name='ui'   --data hosts='demo.centerity.com' --data path_handling='v1'
+      sleep1
+
+      curl -i -s -X POST http://kong-kong-admin:8001/services   --data name=keycloak-headless   --data url='http://keycloak-headless/auth'  
+      curl -i -X POST http://kong-kong-admin:8001/services/keycloak-headless/routes   --data 'paths[]=/auth'   --data name='keycloak-headless'   --data hosts='demo.centerity.com' --data path_handling='v1'
+      sleep 1
+
+      curl -i -s -X POST http://kong-kong-admin:8001/services   --data name=cp-kafka-rest   --data url='http://cp-kafka-rest:8082/payload/topics' 
+      curl -i -X POST http://kong-kong-admin:8001/services/cp-kafka-rest/routes   --data 'paths[]=/payload/topic'   --data name='kafka-rest'   --data hosts='demo.centerity.com' --data path_handling='v1'
+      sleep 1    
+
+      curl -i -s -X POST http://kong-kong-admin:8001/services   --data name=dealer-external   --data url='http://dealer-external:31180/agent/control' 
+      curl -i -X POST http://kong-kong-admin:8001/services/dealer-external/routes   --data 'paths[]=/agent/control'   --data name='dealer-external'   --data hosts='demo.centerity.com' --data path_handling='v1'
+      sleep 1
+
+
+      curl -i -s -X POST http://kong-kong-admin:8001/services   --data name=configuration-api-headless   --data url='http://configuration-api-headless:4000/agent/control' 
+      curl -i -X POST http://kong-kong-admin:8001/services/configuration-api-headless/routes   --data 'paths[]=/agent/control'   --data name='configuration-api-headless'   --data hosts='demo.centerity.com' --data path_handling='v1'
+      sleep 1
+
+
+      curl -i -s -X POST http://kong-kong-admin:8001/services   --data name=dealer-external2   --data url='http://dealer-external:31180/agent/configuration' 
+      curl -i -X POST http://kong-kong-admin:8001/services/dealer-external2/routes   --data 'paths[]=/agent/configuration'   --data name='dealer-external2'   --data hosts='demo.centerity.com' --data path_handling='v1'
+      sleep 1
+
+
+      curl -i -s -X POST http://kong-kong-admin:8001/services   --data name=configuration-api-headless2   --data url='http://configuration-api-headless:4000/agent/configuration' 
+      curl -i -X POST http://kong-kong-admin:8001/services/configuration-api-headless2/routes   --data 'paths[]=/agent/configuration'   --data name='configuration-api-headless2'   --data hosts='demo.centerity.com' --data path_handling='v1'
+      sleep 1
+
+
+      curl -i -s -X POST http://kong-kong-admin:8001/services   --data name=dealer-external3   --data url='http://dealer-external:31180/agent/msgqueue' 
+      curl -i -X POST http://kong-kong-admin:8001/services/dealer-external3/routes   --data 'paths[]=/agent/msgqueue'   --data name='dealer-external3'   --data hosts='demo.centerity.com' --data path_handling='v1'
+      sleep 1
+
+
+      curl -i -s -X POST http://kong-kong-admin:8001/services   --data name=configuration-api-headless3   --data url='http://configuration-api-headless:4000/agent/msgqueue' 
+      curl -i -X POST http://kong-kong-admin:8001/services/configuration-api-headless3/routes   --data 'paths[]=/agent/msgqueue'   --data name='configuration-api-headless3'   --data hosts='demo.centerity.com' --data path_handling='v1'
+
+kind: ConfigMap
+metadata:
+  name: routes-script-configmap
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  labels:
+    app: routes-script-job
+  name: routes-script-job
+spec:
+  backoffLimit: 2
+  template:
+    spec:
+      containers:
+        - command:
+            - "bin/bash"
+            - "-c"
+            - "yum install curl -y && bash /scripts/script.sh"
+          image: 'centos:7'
+          name: script
+          volumeMounts:
+            - name: routes-script-configmap
+              mountPath: /scripts
+              readOnly: false
+      restartPolicy: Never
+      volumes:
+        - name: routes-script-configmap
+          configMap:
+            name: routes-script-configmap
+            defaultMode: 0777
