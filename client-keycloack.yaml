@@ -1,0 +1,94 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: jwt-config-file
+data:
+  jwt-template.sh: |-
+    #!/bin/bash
+
+    curl -L -X POST 'http://localhost:8080/auth/realms/master/protocol/openid-connect/token' \
+      -H 'Content-Type: application/x-www-form-urlencoded' \
+      --data-urlencode 'client_id=Agent' \
+      --data-urlencode 'grant_type=password' \
+      --data-urlencode 'client_secret=the_secret_key' \
+      --data-urlencode 'scope=openid' \
+      --data-urlencode 'username=admin' \
+      --data-urlencode 'password=centerity'
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: client-secret-file
+data:
+  client-secret.sh: |-
+    #!/bin/bash
+
+    touch client.json
+    kcreg.sh get Agent  > client.json
+    export secret=$(grep -o '"secret" : "[^"]*' client.json | grep -o '[^"]*$') && sed -i -e s/the_secret_key/$secret/g jwt-template.sh
+
+---
+apiVersion: v1
+data:
+  script.sh: |-
+    #!/bin/bash
+
+      kubectl exec -it keycloak-0 -n centerity -- bash -c "kcreg.sh config credentials --server http://localhost:8080/auth --realm master --user admin --password centerity"
+      kubectl exec -it keycloak-0 -n centerity -- bash -c "kcreg.sh create -s clientId=Agent -s directAccessGrantsEnabled=true"
+      kubectl exec -it keycloak-0 -n centerity -- bash -c "kcreg.sh get Agent"
+      kubectl cp -n centerity jwt-template.sh keycloak-0:/
+      kubectl cp -n centerity client-secret.sh keycloak-0:/
+      kubectl exec -it keycloak-0 -n centerity -- bash -c "bash client-secret.sh"
+      kubectl exec -it keycloak-0 -n centerity -- bash -c "bash jwt-template.sh"
+      kubectl exec -it keycloak-0 -n centerity -- bash -c "bash jwt-template.sh"
+
+kind: ConfigMap
+metadata:
+  name: keycloak-client-token-configmap
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  labels:
+    app: keycloak-client-token-job
+  name: keycloak-client-token-job
+spec:
+  backoffLimit: 2
+  template:
+    spec:
+      containers:
+        - command:
+            - "bin/bash"
+            - "-c"
+            - "bash /scripts/script.sh"
+          image: 'bitnami/kubectl:1.12'
+          name: script
+          volumeMounts:
+            - name: jwt-config-file
+              mountPath: /jwt-template.sh
+              subPath: jwt-template.sh
+            - name: client-secret-file
+              mountPath: /client-secret.sh
+              subPath: client-secret.sh
+            - name: keycloak-client-token-configmap
+              mountPath: /scripts
+              readOnly: false
+      restartPolicy: Never
+      volumes:
+        - name: jwt-config-file
+          configMap:
+            name: jwt-config-file
+            items:
+              - key: jwt-template.sh  
+                path: jwt-template.sh 
+        - name: client-secret-file
+          configMap:
+            name: client-secret-file
+            items:
+              - key: client-secret.sh
+                path: client-secret.sh
+        - name: keycloak-client-token-configmap
+          configMap:
+            name: keycloak-client-token-configmap
+            defaultMode: 0777
